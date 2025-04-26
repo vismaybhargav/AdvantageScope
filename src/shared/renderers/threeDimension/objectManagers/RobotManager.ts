@@ -20,6 +20,9 @@ import {
 import ObjectManager from "../ObjectManager";
 import { XR_MAX_RADIUS } from "../OptimizeGeometries";
 import ResizableInstancedMesh from "../ResizableInstancedMesh";
+import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry";
+import { MeshBasicMaterial } from "three";
+import { FontLoader } from "three/examples/jsm/loaders/FontLoader";
 
 export default class RobotManager extends ObjectManager<
   ThreeDimensionRendererCommand_RobotObj | ThreeDimensionRendererCommand_GhostObj
@@ -41,6 +44,7 @@ export default class RobotManager extends ObjectManager<
     shininess: this.materialShininess
   });
   private visionLines: Line2[] = [];
+  private visionLineTexts: Text[] = [];
   private mechanismLines: {
     mesh: ResizableInstancedMesh;
     geometry: THREE.BoxGeometry;
@@ -108,6 +112,15 @@ export default class RobotManager extends ObjectManager<
       this.visionLines[0].material.dispose();
       this.root.remove(this.visionLines[0]);
       this.visionLines.shift();
+    }
+
+    while (this.visionLines.length > 0) {
+      this.visionLineTexts[0].mesh?.geometry.dispose();
+      this.visionLineTexts[0].mat.dispose();
+      if(this.visionLineTexts[0].mesh) {
+        this.root.remove(this.visionLineTexts[0].mesh);
+      }
+      this.visionLineTexts.shift();
     }
     this.swerveTexture?.dispose();
     if (!this.isXR) {
@@ -382,6 +395,12 @@ export default class RobotManager extends ObjectManager<
         this.root.remove(this.visionLines[0]);
         this.visionLines.shift();
       }
+      while(this.visionLineTexts.length > 0) {
+        if(this.visionLineTexts[0].mesh) {
+          this.root.remove(this.visionLineTexts[0].mesh);
+        }
+        this.visionLineTexts.shift();
+      }
     } else {
       while (this.visionLines.length > object.visionTargets.length) {
         // Remove extra lines
@@ -389,6 +408,15 @@ export default class RobotManager extends ObjectManager<
         this.visionLines[0].material.dispose();
         this.root.remove(this.visionLines[0]);
         this.visionLines.shift();
+
+      }
+      while(this.visionLineTexts.length > object.visionTargets.length) {
+        this.visionLineTexts[0].mesh?.geometry.dispose();
+        this.visionLineTexts[0].mat.dispose();
+        if(this.visionLineTexts[0].mesh) {
+          this.root.remove(this.visionLineTexts[0].mesh);
+        }
+        this.visionLineTexts.shift();
       }
       while (this.visionLines.length < object.visionTargets.length) {
         // Add new lines
@@ -401,6 +429,12 @@ export default class RobotManager extends ObjectManager<
         );
         this.visionLines.push(line);
         this.root.add(line);
+
+        let text = new Text("", new MeshBasicMaterial({ color: 0x000000 }));
+        this.visionLineTexts.push(text);
+        if(text.mesh) {
+          this.root.add(text.mesh);
+        }
       }
       for (let i = 0; i < this.visionLines.length; i++) {
         // Update poses
@@ -418,6 +452,35 @@ export default class RobotManager extends ObjectManager<
           translation[2]
         ]);
         this.visionLines[i].geometry.attributes.position.needsUpdate = true;
+        let midpoint = new THREE.Vector3()
+          .addVectors(
+            new THREE.Vector3(
+              object.poses[0].pose.translation[0],
+              object.poses[0].pose.translation[1],
+              object.poses[0].pose.translation[2]),
+              new THREE.Vector3(
+              translation[0],
+              translation[1],
+              translation[2])
+          );
+        if(this.visionLineTexts[i].mesh !== undefined) {
+          const distance = midpoint.length();
+
+          this.visionLineTexts[i].mesh?.geometry.dispose();
+          const loader = new FontLoader();
+          loader.load('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+            // @ts-ignore
+            this.visionLineTexts[i].mesh.geometry = new TextGeometry(
+              distance.toString(),
+              {
+                font: font,
+                size: 0.3,
+              }
+            );
+          });
+
+          this.visionLineTexts[i].mesh?.position.copy(midpoint.multiplyScalar(0.5));
+        }
         let color = object.visionTargets[i].annotation.visionColor;
         if (color !== undefined) {
           this.visionLines[i].material.color = new THREE.Color(color);
@@ -581,5 +644,28 @@ export default class RobotManager extends ObjectManager<
       this.swerveTexture!.needsUpdate = hasSwerveStates || this.lastHadSwerveStates;
       this.lastHadSwerveStates = hasSwerveStates;
     }
+  }
+}
+
+class Text {
+  public text: string;
+  public mat: MeshBasicMaterial;
+  public mesh : THREE.Mesh<TextGeometry, MeshBasicMaterial> | undefined = undefined;
+
+  constructor(
+    text: string,
+    mat: MeshBasicMaterial,
+  ) {
+    this.text = text;
+    this.mat = mat;
+    const loader = new FontLoader();
+    loader.load("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json", (font) => {
+      const geometry = new TextGeometry('', {
+        font: font,
+        size: 0.3,
+      });
+
+      this.mesh = new THREE.Mesh(geometry, mat);
+    });
   }
 }
